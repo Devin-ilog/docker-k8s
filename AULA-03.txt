@@ -1,0 +1,130 @@
+### Dockerfile ###
+
+falamos sobre o que é o Dockerfile e começamos a ver alguns comandos que podem aparecer dentro dele. O que fizemos foi referente a aplicação com PHP+APACHE:
+
+FROM php:7.4-apache
+RUN docker-php-ext-install mysqli
+ADD php.ini /usr/local/etc/php
+copy /projeto /var/www/html/projeto
+
+
+para criarmos a imagem a partir desse Dockerfile executamos o comando:
+
+docker build -t php-ilog:1.0 .  >> compila o Dockerfile que está no diretório corrente passando um nome e versão para imagem gerada.
+
+Para subir o container com a imagem gerada, usamos:
+docker run -d -p 8080:80 php-ilog:1.0
+
+com container em execução podemos constatar que temos um container com o php na versão 7.4 com apache já devidamente configurado para nossa aplicação, com função mysqli instalada e arquivo php.ini copiado. 
+
+
+___ docker push ___ 
+
+com ele podemos enviar nossa imagem criada localmente para o hub da docker e compartilhar ela publicamente. Primeiramente, devemos ter uma conta no Docker Hub e efetuar login na plataforma com o comando:
+
+docker login
+
+enviar imagem para docker hub:
+
+docker push Nome_Usuario_Docker_Hub/nome_Imagem:tag
+
+se imagem não estiver nomeada no padrão com nome de usuário do docker hub:
+
+docker tag ID_IMAGEM Nome_Usuario_Docker_Hub/nome_Imagem:tag
+
+agora executar o docker push..
+
+para ficar disponível publicamente ele deve ser configurada dentro do site Docker Hub para public ao invés de private, como default. 
+
+
+publiquei a imagem do exemplo de PHP-APACHE. Segue comandos de download:
+
+- docker pull bielguimaraes94/php-ilog
+ 
+     docker run -d -p 8080:80 bielguimaraes94/php-ilog
+      acessando em http://localhost:8080/projeto/refeitorio.php
+
+
+
+### JAVA ###
+
+Posteriormente vimos mais um exemplo agora usando Java. Abaixo, temos um docker run para criar container para compilar um arquivo .java. Observem a sintaxe:
+
+docker run -v C:\Users\gabriel.ti\java:/myapp -w /myapp openjdk:11 javac Main.java
+
+-v C:\Users\gabriel.ti\java:/myapp > copiando o arquivo .java pra dentro do container
+-w /myapp > definindo o workdir do container
+javac Main.java > comando a ser executado dentro do container assim que ele ficar UP. Quando esse comando de compilação for completado o container será encerrado. 
+
+se optarmos para agora rodar a aplicação que foi compilada podemos rodar o seguinte container:
+
+docker run -v C:\Users\gabriel.ti\java:/myapp -w /myapp openjdk:11 java HelloWorld
+
+java HelloWorld > executando o .class gerado na etapa de compilação. 
+
+um Dockerfile para esse tipo de tecnologia seria:
+
+from openjdk:11
+copy . /myapp
+workdir /myapp
+run javac Main.java
+CMD java HelloWorld
+
+após o build nesse Dockerfile basta executar um container e já observar no terminal a aplicação printando na tela Hello World. 
+
+docker run  java-ilog:1.0
+
+
+
+
+Mostrei exemplo de Dockerfile usando o servidor de aplicativos Wildfly para deploy do arquivo .war:
+link documentação imagem: https://quay.io/repository/wildfly/wildfly
+
+FROM quay.io/wildfly/wildfly
+ADD m03s01-1.0-SNAPSHOT.war /opt/jboss/wildfly/standalone/deployments/
+RUN /opt/jboss/wildfly/bin/add-user.sh gabriel gabriel1 --silent
+CMD ["/opt/jboss/wildfly/bin/standalone.sh", "-b", "0.0.0.0", "-bmanagement", "0.0.0.0"]
+
+
+dando build na Dockerfile (lembrando que o arquivo .war deve estar na mesma pasta do arquivo Dockerfile) :
+
+docker build -t java-api:1.0 .
+
+executando container:
+
+docker run -d -p 8080:8080 -p 9990:9990 java-api:1.0
+
+-p 8080:8080 >> porta para acessarmos a interface do Swagger da API
+
+-p 9990:9990 >> porta para acessarmos a interface de gerenciamento do Wildfly fazendo login com username e senha definidos no Dockerfile.
+
+acessando no navegador: http://localhost:8080/m03s01-1.0-SNAPSHOT
+                        http://localhost:9990
+
+
+
+### JAVASCRIPT - NODE ###
+
+link do .zip com projeto de exemplo: https://drive.google.com/file/d/1Pc6vKhKoxD1HqbfoFLFkcBk5WzrqrsbY/view?usp=sharing
+
+Dockerfile:
+
+FROM node:alpine
+WORKDIR /usr/app
+COPY package*.json ./
+RUN npm install
+COPY . .
+EXPOSE 3000
+cmd npm start
+
+
+dando build : docker build -t node-ilog:1.0 . 
+
+executando container: 
+
+docker run --rm -p 3000:3000 node-ilog:1.0
+
+--rm >>> container será removido após encerramento. Com isso ele não será listado no "docker ps -a"
+
+
+acessando no navegador: localhost:3000

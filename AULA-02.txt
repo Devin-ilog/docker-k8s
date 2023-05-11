@@ -1,0 +1,148 @@
+
+
+dando continuidade ao conteúdo... vimos ontem:
+
+docker stop nomeContainer > para o container especificado
+
+docker start nomeContainer > inicia o container especificado
+
+docker rm nomeContainer (ou ID Container)  > para remover um container com status encerrado
+
+docker rm -f nomeContainer (ou ID Container) > para remover de forma forçada um container em execução.
+
+com isso o container excluído não aparecerá mais em "docker ps -a"
+
+____ VOLUMES ___
+
+podemos criar um volume nomeado através do comando:
+
+docker volume create nomeVolume
+
+após criarmos podemos vincular esse volume a um container. Veremos mais pra frente. 
+
+Para removermos um volume nomeado o comando é:
+docker volume rm nomeVolume
+
+Outro volume possível é bind volume. Nesse modo fazemos um espelhamento bidirecional de uma pasta do host (nosso computador) para uma pasta dentro do container. Exemplo:
+
+-v C:\Users\gabriel.ti\db:/var/lib/mysql
+
+C:\Users\gabriel.ti\db >> pasta do host
+ 
+/var/lib/mysql >> pasta dentro do container
+
+esse parâmetro "-v" passamos no comando docker run.
+
+
+fizemos uma demonstração em aula da importância de se trabalhar com volumes quando queremos persistir os dados. Usei o exemplo de um banco postgreSQL onde criei o container, acessei via PGADMIN, criei um banco chamado iLOG. Posteriormente, fiz e exclusão desse container e em seguida subi outro exatamente igual ao anterior. Porém, os dados não estavam mais lá. 
+
+banco em postgres sem persistencia de dados:
+docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=password -d postgres
+
+criei em seguida um banco em MYSQL com persistência através de volumes. Container ficou:
+
+docker run --name mysql -d -p 3306:3306 -v C:\Users\gabriel.ti\db-web:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=rootdb__ mysql:5.7.24
+
+após criação acessei o banco via Mysql Workbench.
+
+uma outra forma de persistência seria por volume nomeado:
+
+docker run --name mysql -d -p 3306:3306 -v ilog:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=rootdb__ mysql:5.7.24
+
+
+____ BANCO MARIADB ____
+
+
+Documentação da imagem no Docker Hub: https://hub.docker.com/_/mariadb
+
+docker run -d --name mariadb --env MARIADB_ROOT_PASSWORD=senha -p 3306:3306 -v ilog-volume:/var/lib/mysql mariadb:latest
+
+tentem acessar pelo SGBD que vcs usaram em aula de SQL....
+
+
+____ NETWORK ___
+
+criarmos uma rede em comum para dois ou mais containers é útil para garantirmos a comunicação entre eles pelo nome do container que é imutável, diferente do IP; Para criamos uma network o comando é:
+
+docker network create ilog
+
+docker network ls > lista as redes locais no docker
+
+
+usamos como exemplo o container do ADMINER comunicando com o container do mariadb. Inicialmente subimos os container sem rede em comum. Ficou:
+
+docker run -d --name adminer -p 8080:8080 adminer
+
+docker run -d --name mariadb --env MARIADB_ROOT_PASSWORD=senha -p 3306:3306 -v ilog-volume:/var/lib/mysql mariadb:latest
+
+acessando em localhost:8080 temos o Adminer em operação e podemos logar no banco mariadb. (host é mariadb, pois foi o nome dado ao container com banco, usuário padrão é root, senha "senha" e banco pode deixar em branco)
+
+vimos que não foi possível conectar... o container do adminer desconhece host "mariadb". A conexão funciona se em server colocarmos 127.0.0.1 ou IP do nosso notebook / desktop. Então, vamos vincular aos containers a rede ilog criada:
+
+docker network connect ilog mariadb 
+docker network connect ilog adminer
+
+sem essa network em comum o acesso ao banco pelo nome não seria possível. Teríamos que informar o IP do container. 
+
+outra forma seria criar os containers já mencionanod a network. Ficaria:
+
+
+docker run -d --name adminer --network=ilog -p 8080:8080 adminer
+
+docker run -d --name mariadb --network=ilog --env MARIADB_ROOT_PASSWORD=senha -p 3306:3306 -v ilog-volume:/var/lib/mysql mariadb:latest
+
+
+
+### PHP-APACHE-MYSQL ###
+
+.zip do projeto: https://drive.google.com/file/d/1r-3exkoeskrz9zcH0XQ3RBR3hqA6qREO/view?usp=sharing
+
+para a aplicação em php o container para execução com persistência de dados seria: 
+
+docker run --name web -d -p 8080:80 -v C:\Users\gabriel.ti\projeto:/var/www/html/projeto php:7.4-apache
+
+na prática, esse bind volume está sendo usado para espelhar o código fonte da aplicação que está na pasta projeto do host. 
+
+o container do banco mysql ficaria:
+
+docker run --name banco -d -p 3306:3306 -v C:\Users\gabriel.ti\db-web:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=rootdb__ mysql:5.7.24
+
+
+se optarmos por volume nomeado ficaria:
+docker run --name banco -d -p 3306:3306 -v ilog-volume:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=rootdb__ mysql:5.7.24
+
+na prática, quando o container startar pela primeira vez, ele criará a estrutura do banco no diretório padrão do mysql em /var/lib/mysql e fará um espelhamento para pasta do host C:\Users\gabriel.ti\db-web (ou para o volume "ilog-volume"). Quando o próximo container for executar esse mesmo docker run encontrará toda a estrutura deixada pelo container anterior e assim a persistência de dados será mantida. 
+
+
+Vimos que para a aplicação em php comunicar com o banco era necessário instalar uma função (mysqli) dentro do container. Com isso aprendemos como acessar o terminal de um container (muito útil):
+
+docker exec -it nomeContainer /bin/bash
+-it: parâmetro interative terminal
+
+em nosso exemplo ficou: docker exec -it web /bin/bash
+
+uma vez dentro do container podemos rodar o comando de instalação da função:
+docker-php-ext-install mysqli
+
+poderíamos ter enviado o comando de instalação diretamente sem acessar o container, ficando:
+docker exec web docker-php-ext-install mysqli
+
+
+posteriormente vimos que era necessário também copiar o arquivo de configuração do PHP, o php.ini. Com isso vimos um novo comando possível para cópia:
+docker cp host_file_directory container_name:/container_file_directory.
+
+no nosso exemplo ficou:
+
+docker cp C:\Users\gabriel.ti\Desktop\php.ini web:/usr/local/etc/php
+
+
+__ docker inspect ___
+
+usamos para detalhar um recurso, podendo ser um volume, container, imagem etc...
+
+docker inspect web  >> detalha o container de nome web
+docker inspect volume ilog  >> detalha o volume ilog
+docker inspect network ilog
+
+
+
