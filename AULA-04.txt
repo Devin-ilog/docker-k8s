@@ -1,0 +1,222 @@
+deixo a documentação da docker sobre o comando "docker push" que discutimos na aula retrasada:
+
+https://docs.docker.com/engine/reference/commandline/push/
+
+imagem mais atual, a latest requer uma atualização manual mesmo....ela não identifica automaticamente a última versão do repositório. 
+
+
+
+BOAS PRÁTICAS EM DOCKERFILE:
+
+1. Crie containers efêmeros.
+• Você precisa garantir que pode parar, destruir e reconstruir um container com o mínimo de setup possível.
+2. Entenda o processo que sua aplicação faz antes de construir uma imagem;
+• Anote o ‘passo-a-passo’ do que você precisa fazer para a aplicação estar disponível depois que sobe a base do container. O que normalmente faço, é subir um container sem nada, e ir instalando o que preciso até estar da forma que quero. Depois, analiso o history da máquina e coleto os comandos que utilizei para criar o dockerfile.
+3. Não instale pacotes desnecessários;
+• Nem todo pago que você considera legal pode ser interessante instalar. Cada pacote instalado aumenta a complexidade e tamanho da imagem final.
+4. Desacople o máximo possível a aplicação;
+• Deixe o container mais próximo de um microserviço, isso vai te ajudar em desde esteiras de desenvolvimento a upgrades da aplicação de forma segmentada (lembre-se que o próprio docker segmentou os runtimes para facilitar as coisas);
+5. Minimize a quantidade de layers(steps) do build;
+• Não precisa criar um RUN para cada yum install que você precisa na aplicação.
+A dica aqui é, use o RUN com documentação de cada estágio, por exemplo: um RUN para atualizar o SO, um para instalar os programas e um para o deploy da aplicação.
+
+
+### DOCKER-COMPOSE ###
+
+vimos que criar os container de nossa aplicação apenas do modo imperativo (docker run) nem sempre é vantajoso, haja vista a quantidade de parâmetros e quantidade de containers que uma aplicação possa ter. Com isso podemos jogar todas essas definições em um arquivo .yaml e subir tudo de uma vez, de forma declarativa.
+
+nosso arquivo yaml para PHP-APACHE + MYSQL ficou:
+
+version: "3"
+services:
+
+  web:
+    image: php:7.4-apache  
+    container_name: teste-php-apache
+    ports:
+      - "8080:80"
+    volumes:
+      - C:\Users\gabriel.ti\projeto:/var/www/html/projeto
+
+  banco:
+    image: mysql:5.7.24
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ilog:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD:rootdb__
+
+volumes:
+  ilog:
+
+
+# comando para executar o compose file
+
+docker-compose -f docker-compose.yml up -d  >> criar e iniciar serviços definidos no .yaml
+docker-compose -f docker-compose.yml down >> parar e excluir tudo que foi criado a partir do arquivo . yaml
+
+lembrando que não precisamos definir network para esse caso. O docker criará uma network em comum para ambos os serviços quando aplicarmos o arquivo. É subentendido pelo docker que é nossa vontade que os servicos "web" e "banco" se comuniquem pois estão definidos no mesmo arquivo. 
+
+mais exemplos de compose file:
+
+version: "3"
+services:
+  app:
+    image: node-ilog:1.0
+    ports:
+      - "3000:3000"
+
+---
+
+version: "3"
+services:
+  apijava:
+    image: java-ilog:1.0
+    container_name: java-app-wildfly
+    ports:
+      - "8080:8080"
+      - "9990:9990"
+
+
+#### Docker Swarm (formação de cluster e orquestração de container do docker) ###
+
+1° comando de inicialização do Swarm mode no node Master
+
+docker swarm init 
+
+podemos especificar um ip 
+
+docker swarm init  --listen-addr ip_master
+
+2° ingressão dos nodes workers
+
+copiar comando join gerado no master para dentro dos workers
+
+3° listar os nodes do cluster
+
+docker nodes ls 
+
+4° criar os serviços em modo cluster a partir do docker-compose file
+
+docker stack deploy --compose-file=nginx.yml ilog
+
+link do nginx.yaml: https://drive.google.com/file/d/1zftiQbJ1KiA8jNUURQOGgCocBNDv105y/view?usp=sharing
+
+criamos a stack. Agora vamos listar se ela está no cluster:
+
+docker stack ls
+
+
+o que fizemos depois foi acessar cada um dos container nginx e alterar o index.html para: Hello from: $HOSTNAME
+
+acessando de fora podemos notar que a cada requisição a página index.html uma replica diferente era acionada. Isso é o balanciamento de carga do docker em ação.
+
+
+usamos o Visualizer para ver os servicos criados:
+docker run -it -d -p 8181:8080 -v /var/run/docker.sock:/var/run/docker.sock dockersamples/visualizer
+
+acessando em IP_NODE_MASTER:8181 pode-se observar os nodes membros do cluster bem como os serviços e containers em execução
+
+5° listar servicos criados 
+docker service ls >> no node master apenas
+
+detalhes de onde cada servico está rodando:
+docker service ps nomeservico
+
+6° escalar nosso serviço 
+docker service scale swarm_nginx=2
+
+atualizando a imagem do servico swarm_nginx para nginx:alpine  (observar a atualização dos serviços em paralelismo lá no Visualizer):
+docker service update --image nginx:alpine swarm_nginx
+
+7° excluir serviços criados a partir do stack deploy (semelhante ao docker-compose down)
+docker stack rm nome-stack-deploy
+
+
+Outros parâmetros que podem aparecer dentro de um arquivo .yml para docker swarm:
+
+version: "3.9"
+services:
+  redis:
+    image: redis:alpine
+    deploy:
+      replicas: 6
+      placement:
+        max_replicas_per_node: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+
+
+
+---
+
+version: "3.9"
+services:
+  redis:
+    image: redis:alpine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 50M
+
+
+
+
+
+_________KUBERNETES______
+
+.zip dos yaml usados: https://drive.google.com/file/d/16C1KawXyH-fbLL6TtJd1fC6UfvwcR1dg/view?usp=sharing
+
+
+kubectl apply -f arquivo.yaml > executa o arquivo em formato yaml. Se o kind do arquivo for um Service, o kubernetes criará o serviço, por exemplo. 
+
+kubectl apply -f arquivo.yaml --namespace=nomeNamespace  >> subir uma aplicação em namespace específica. 
+
+kubectl get nodes > mostra quandos nodes temos em nosso cluster e o status de cada um.
+kubectl get pv > mostra os volumes persistentes criados kubectl 
+kubectl get service > mostra os servicos criados 
+kubectl get deploy > mostra os deploy criados
+kubectl get pods > mostra os pods em execução
+kubectl get pods -o wide > mostra mais detalhes dos pods em execução, como o node por exemplo.
+kubectl get secret > mostra os arquivos de senha secret criados
+kubectl get namespaces > mostra os namespaces criados no kubernetes (os default pelo kubernetes e os criados por aplicações)
+
+
+kubectl describe service nome_servico  >  detalha mais informações sobre o serviço. 
+kubectl describe pod nome_pod > detalha mais informações sobre o pod
+kubectl describe secret nome_secret > detalha mais informações sobre a secret.
+kubectl describe deploy nome_deploy > detalha mais informações sobre o deploy
+
+kubectl get deploy nomeDeploy -o yaml > arquivo-result.yaml    >>> exportar em arquivo formato yaml do deploy em execução. 
+
+pra acessar bash do pod:
+kubectl exec -it nomePod -- bash ou /bin/bash ou /bin/sh
+
+
+kubectl delete -f arquivo.yaml > deleta tudo que foi criado  a partir do arquivo yaml. 
+kubectl delete pod nome_pod > deleta o pod informado
+kubectl delete deploy nome_deploy > deleta deploy informado...
+
+
+kubectl run web --image=nginx   > subir um pod (container) com imagem nginx (servidor http)
+
+kubectl create deployment web-2 --image=nginx --replicas=2   >> Criar um deploy que criará automaticamente dois pods com imagem do nginx
+
+
+ESCALAR APLICAÇÃO: 
+
+kubectl autoscale deployment web-2 --min=2 --max=10
+
+ou via arquivo .yaml 
+
+atualizar imagem de uma aplicação em execução : 
+kubectl set image web-2 nginx=nginx:alpine
+
+usamos o nginx na versão alpine como exemplo. Após o comando vimos os pods novos sendo criados e os antigos sendo terminados. 
+
